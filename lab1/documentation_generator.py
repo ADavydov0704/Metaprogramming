@@ -49,7 +49,7 @@ class Documentation:
     def generate_content(self, path):
         body = ""
         if (len(self.docs_and_names) == 0):
-            if (self.relpath != ""):
+            if (self.relpath != "" and os.path.isdir(self.path)):
                 os.mkdir(path)
             
             for i in range(len(self.subdocumentations)):
@@ -87,6 +87,7 @@ def if_c_file(name):
         return True
     else:
         return False
+
 
 def step(lines, i , j):
     inext = i
@@ -128,6 +129,8 @@ def process_if_comment(lines, i , j):
                 found = True
             else:
                 i, j = step(lines, i, j)
+        i, j = step(lines, i, j)
+        i, j = step(lines, i, j)
         return True, i, j
     else:
         return False, i, j
@@ -137,6 +140,7 @@ def process_if_literal(lines, i, j):
         i, j = step(lines, i, j)
         while lines[i][j] != '"' :
             i, j = step(lines, i, j)
+        i, j = step(lines, i, j)
         return True, i, j
     else:
         return False, i, j
@@ -183,8 +187,6 @@ def declaration_end(lines, i, j):
     else:
         return False
 
-
-
 def process_if_doc(lines, i, j):
     doc = ""
     name = ""
@@ -208,7 +210,8 @@ def process_if_doc(lines, i, j):
         i, j = step(lines, i, j)
         if (not is_oneline):
             i, j = step(lines, i, j)
-        process_if_space(lines, i, j)
+        
+        dummy, i, j = process_if_space(lines, i, j)
 
         process, is_oneline = doc_start(lines, i, j)
         
@@ -217,6 +220,31 @@ def process_if_doc(lines, i, j):
             name += lines[i][j]
             i, j = step(lines, i, j)
     return any_doc, i, j, [doc, name.strip()]
+
+def procces_code(lines, i, j):
+    name = ""
+
+    if (lines[i][j] == ';'):
+        i, j = step(lines, i, j)
+        return i, j, []
+
+    if (lines[i][j] == '#'):
+        name = lines [i][j :]
+        i += 1
+        j = 0
+        #dunno skip or not
+        #name = ""
+    else:
+        while(not declaration_end(lines, i, j)):
+            is_literal, inext, jnext = process_if_literal(lines, i, j)
+            if (is_literal):
+                while (i != inext and j != jnext):
+                    name += lines[i][j]
+                    i, j = step(lines, i, j)
+            else:
+                name += lines [i][j]
+                i, j = step(lines, i, j)
+    return i, j, ['N/A', name]
 
 def parse_into_documentation(path):
     file = open(path, 'r')
@@ -229,30 +257,34 @@ def parse_into_documentation(path):
     while (i != len(lines)):
         doc_and_name = []
         processed = False
-        #iold = i
-        #jold = j
+        iold = i
+        jold = j
         processed, i, j, doc_and_name = process_if_doc(lines, i, j)
         if (processed):
             res.append(doc_and_name)
-            #print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') doc = ', doc_and_name)
+            print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') doc = ', doc_and_name)
             continue
         processed, i, j = process_if_comment(lines, i, j)
         if (processed):
-            #print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') comment')
+            print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') comment')
             continue
         processed, i, j = process_if_literal(lines, i, j)
         if (processed):
-            #print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') literal')
+            print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') literal')
             continue
         processed, i, j = process_if_block(lines, i, j)
         if (processed):
-            #print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') block')
+            print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') block')
             continue
         processed, i, j = process_if_space(lines, i, j)
         if (processed):
-            #print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') space')
+            print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') space')
             continue
-        i, j = step(lines, i , j)
+        
+        i, j, doc_and_name = procces_code(lines, i , j)
+        print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') code')
+        if (len(doc_and_name) > 0):
+            res.append(doc_and_name)
 
     return res
 
@@ -295,6 +327,7 @@ def add_navigation(body, lst):
     navigation += wrap_with_tag("", 'p')
     navigation += wrap_with_tag("----------------------------------------------------", 'p')
     return navigation + body
+
 
 def generate_header(doc_folder):
     global project_name
@@ -346,6 +379,7 @@ def generate_documentation(path, doc_folder, project_name_local):
     generate_content(doc_folder, documentation)
 
     print("Documentation successfully generated")
+
 
 if __name__ == '__main__':
     import argparse
