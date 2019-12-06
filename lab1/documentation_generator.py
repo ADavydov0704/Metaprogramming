@@ -103,14 +103,33 @@ def step(lines, i , j):
 
 def process_if_block(lines, i, j):
     if (lines[i][j] == '{'):
+        istart = i
+        jj = j
+        while (jj >= 0):
+            if (not lines[i][j].isspace()):
+                jstart = jj
+            jj -= 1
+        
         block_cnt = 1
         while (block_cnt > 0):
             i, j = step(lines, i, j)
+
+            if (lines[i][j] == '#'):
+                i = istart + 1
+                j = jstart
+                while (lines[i][j] != '}' and i < len(lines)):
+                    i += 1
+
+                i, j = step(lines, i, j)
+                return True, i, j
+
             if (lines[i][j] == '{'):
                 block_cnt += 1
             elif (lines[i][j] == '}'):
                 block_cnt -= 1
         i, j = step(lines, i, j)
+        if (lines[i][j] == ';'):
+            i, j = step(lines, i, j)
         return True, i , j
     else:
         return False, i, j
@@ -139,6 +158,7 @@ def process_if_literal(lines, i, j):
     if (lines[i][j] == '"'):
         i, j = step(lines, i, j)
         while lines[i][j] != '"' :
+            #print(i, ' ', j, ' ', lines[i][j])
             i, j = step(lines, i, j)
         i, j = step(lines, i, j)
         return True, i, j
@@ -147,7 +167,7 @@ def process_if_literal(lines, i, j):
   
 def process_if_space(lines, i, j):
     found = False
-    while (lines[i][j].isspace()):
+    while (i < len(lines) and j < len(lines[i]) and (lines[i][j].isspace() or lines[i][j] == '\n')):
         found = True
         i, j = step(lines, i, j)
     return found, i, j
@@ -216,9 +236,20 @@ def process_if_doc(lines, i, j):
         process, is_oneline = doc_start(lines, i, j)
         
     if (any_doc):
-        while (not declaration_end(lines, i, j)):
-            name += lines[i][j]
-            i, j = step(lines, i, j)
+        if (lines[i][j] == '#'):
+            name = lines[i][j:]
+            j = 0
+            i += 1
+        else:
+            while (not declaration_end(lines, i, j)):
+                name += lines[i][j]
+                i, j = step(lines, i, j)
+            if (lines[i][j] == '{'):
+                if (name[-2:] == '= ' or name[-2:] == '=\n'):
+                    name = name[0:-2]
+                elif (name[-1] == '='):
+                    name[-1] = name[0:-1]
+
     return any_doc, i, j, [doc, name.strip()]
 
 def procces_code(lines, i, j):
@@ -229,25 +260,33 @@ def procces_code(lines, i, j):
         return i, j, []
 
     if (lines[i][j] == '#'):
-        name = lines [i][j :]
+        #name = lines [i][j :]
         i += 1
         j = 0
-        #dunno skip or not
+        #comment next line to count directives as names
         #name = ""
     else:
         while(not declaration_end(lines, i, j)):
             is_literal, inext, jnext = process_if_literal(lines, i, j)
+            #print(i, ' ', j, '  ', inext, ' ', jnext)
             if (is_literal):
-                while (i != inext and j != jnext):
+                while (i < inext or inext == i and j < jnext):
+                    #print(i, ' ', j, ' ', name)
                     name += lines[i][j]
                     i, j = step(lines, i, j)
             else:
                 name += lines [i][j]
                 i, j = step(lines, i, j)
+        if (lines[i][j] == '{'):
+            if (name[-2:] == '= ' or name[-2:] == '=\n'):
+                name = name[0:-2]
+            elif (name[-1] == '='):
+                name[-1] = name[0:-1]
     return i, j, ['N/A', name]
 
 def parse_into_documentation(path):
     file = open(path, 'r')
+    print(path)
     lines = file.readlines()
     file.close()
     res = []
@@ -260,8 +299,13 @@ def parse_into_documentation(path):
         iold = i
         jold = j
         processed, i, j, doc_and_name = process_if_doc(lines, i, j)
+        processed, i, j = process_if_space(lines, i, j)
         if (processed):
-            res.append(doc_and_name)
+            print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') space')
+            continue
+        if (processed):
+            if (not doc_and_name[1].isspace()):
+                res.append(doc_and_name)
             print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') doc = ', doc_and_name)
             continue
         processed, i, j = process_if_comment(lines, i, j)
@@ -276,14 +320,10 @@ def parse_into_documentation(path):
         if (processed):
             print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') block')
             continue
-        processed, i, j = process_if_space(lines, i, j)
-        if (processed):
-            print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') space')
-            continue
         
         i, j, doc_and_name = procces_code(lines, i , j)
         print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') code')
-        if (len(doc_and_name) > 0):
+        if (len(doc_and_name) > 0 and len(doc_and_name[1]) > 0  ):
             res.append(doc_and_name)
 
     return res
