@@ -13,6 +13,9 @@ class Documentation:
         self.docs_and_names = []
         self.relpath = relpath
 
+        #prev_links = prev_links
+        #self.uplinks = prev_links
+
         # i hate python, it force me to do this :(
         self.uplinks = []
         for i in range(len(prev_links)):
@@ -101,12 +104,16 @@ def step(lines, i , j):
     
     return inext, jnext
 
+last_name = ""
+
 def process_if_block(lines, i, j):
+    global last_name
+    name = ""
     if (lines[i][j] == '{'):
         istart = i
         jj = j
         while (jj >= 0):
-            if (not lines[i][j].isspace()):
+            if (not lines[i][jj].isspace()):
                 jstart = jj
             jj -= 1
         
@@ -114,25 +121,57 @@ def process_if_block(lines, i, j):
         while (block_cnt > 0):
             i, j = step(lines, i, j)
 
+            brk = False
             if (lines[i][j] == '#'):
                 i = istart + 1
                 j = jstart
                 while (lines[i][j] != '}' and i < len(lines)):
                     i += 1
 
-                i, j = step(lines, i, j)
-                return True, i, j
+                #i, j = step(lines, i, j)
+                #return True, i, j, ['N\A', name]
+                brk = True
+
+            if (brk):
+                break;
 
             if (lines[i][j] == '{'):
                 block_cnt += 1
             elif (lines[i][j] == '}'):
                 block_cnt -= 1
         i, j = step(lines, i, j)
+        
+        if (lines[i][j] != ';' and (last_name.find("struct") != -1 or last_name.find("union") != -1 or last_name.find("enum") != -1)):
+            if (last_name.find("struct") != -1 ):
+                res = last_name.find("struct")
+                name = 'struct '
+            elif (last_name.find("union") != -1):
+                res = last_name.find("union")
+                name = 'union '
+            elif (last_name.find("enum") != -1):
+                res = last_name.find("enum")
+                name = 'enum '
+            else:
+                raise Exception("Trouble with las_name")
+            print("RES   ", res , "   ", res+len(name)-1 , "  ", len(last_name))
+            
+            truename = name[0:-1]
+            sz = len(truename)
+            if (res > 0 and not last_name[res-1].isspace()) or (
+            res + sz + 1 < len(last_name) 
+            and not (last_name[res+sz].isspace() or last_name[res+sz] == '\n')):
+                pass
+            else:
+                while (i < len(lines) and lines[i][j] != ';'):
+                    name += lines[i][j]
+                    i, j = step(lines, i , j)
+        
         if (lines[i][j] == ';'):
             i, j = step(lines, i, j)
-        return True, i , j
+        last_name = ""
+        return True, i , j, ['N\\A', name]
     else:
-        return False, i, j
+        return False, i, j, ['N\\A', name]
 
 def process_if_comment(lines, i , j):
     if (j < len(lines[i]) - 1 and lines[i][j] == '/' and lines[i][j + 1] == '/') :
@@ -285,6 +324,7 @@ def procces_code(lines, i, j):
     return i, j, ['N/A', name]
 
 def parse_into_documentation(path):
+    global last_name
     file = open(path, 'r')
     print(path)
     lines = file.readlines()
@@ -298,32 +338,45 @@ def parse_into_documentation(path):
         processed = False
         iold = i
         jold = j
-        processed, i, j, doc_and_name = process_if_doc(lines, i, j)
+        
         processed, i, j = process_if_space(lines, i, j)
         if (processed):
             print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') space')
             continue
+
+        processed, i, j, doc_and_name = process_if_doc(lines, i, j)
         if (processed):
-            if (not doc_and_name[1].isspace()):
+            if (len(doc_and_name) > 0 and len(doc_and_name[1]) > 0  ):
+                last_name = doc_and_name[1]
                 res.append(doc_and_name)
             print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') doc = ', doc_and_name)
             continue
+
         processed, i, j = process_if_comment(lines, i, j)
         if (processed):
             print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') comment')
             continue
+
         processed, i, j = process_if_literal(lines, i, j)
         if (processed):
             print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') literal')
             continue
-        processed, i, j = process_if_block(lines, i, j)
+
+        processed, i, j, doc_and_name = process_if_block(lines, i, j)
         if (processed):
-            print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') block')
+            if (len(doc_and_name) > 0 and len(doc_and_name[1]) > 0 ):
+                last_name = doc_and_name[1]
+                res.append(doc_and_name)
+
+            if (i < len(lines)):
+                print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') block last_name = ', last_name, ' $ cur_i = ', lines[i][0:-1])
             continue
         
         i, j, doc_and_name = procces_code(lines, i , j)
-        print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') code')
-        if (len(doc_and_name) > 0 and len(doc_and_name[1]) > 0  ):
+        if (i < len(lines)):
+            print("from (", iold, ", ", jold, ") to (", i, ', ', j, ') code  cur_i = ', lines[i][0:-1])
+        if (len(doc_and_name) > 0 and len(doc_and_name[1]) > 0 ):
+            last_name = doc_and_name[1]
             res.append(doc_and_name)
 
     return res
